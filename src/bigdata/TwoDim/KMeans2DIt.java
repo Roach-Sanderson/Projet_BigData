@@ -1,9 +1,12 @@
 package bigdata.TwoDim;
 
+import java.awt.geom.Point2D;
 import java.io.IOException;
-
+import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -13,8 +16,8 @@ import org.apache.hadoop.util.ToolRunner;
 
 
 public class KMeans2DIt{
-	public static class KMeans2DItMapper extends Mapper<Text, Text, Text, Text> {
-		public void map(Text key, Text value, Context context) throws IOException, InterruptedException {
+	public static class KMeans2DItMapper extends Mapper<NullWritable, Text, Set<Point2D>, DoubleWritable> {
+		public void map(NullWritable key, Text value, Context context) throws IOException, InterruptedException {
 			
 		}
 	}
