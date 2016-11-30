@@ -8,7 +8,7 @@ package bigdata.TwoDim;
 
 import org.apache.hadoop.util.ProgramDriver;
 
-public class KMeans2D {
+public class KMeans1D {
 	
 	public static void main( String[] args ) throws Exception {
 		ProgramDriver pgd = new ProgramDriver();
