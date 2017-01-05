@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
@@ -28,37 +29,40 @@ import org.apache.hadoop.util.ToolRunner;
 
 
 public class KMeans1DIt{
-	public static class KMeans1DItMapper extends Mapper<NullWritable, Text, Set<Point2D>, DoubleWritable> {
+	
+	public static class KMeans1DItMapper extends Mapper<NullWritable, Text, DoubleWritable, String[]> {
+
 		public void map(LongWritable key, Text value, Context context) throws Exception {
 			if (key.get() == 0 ) return;
 			String tokens[] = value.toString().split(",");
 			if (tokens[4].length()==0) return;
 			Configuration conf = context.getConfiguration();
-			URI uri = null;
-			try {
-				uri = new URI("cache");
-			} catch (URISyntaxException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			int colonne = Integer.parseInt(conf.get("numColonne"));
+			int nbCluster = Integer.parseInt(conf.get("nbCluster"));
+			Double[] keys = new Double[nbCluster];
+			Double position = Double.parseDouble(tokens[colonne]);
+			if(context.getCounter("Progress", "current").getValue() < nbCluster){
+				keys[(int) context.getCounter("Progress", "current").getValue()] = position;
 			}
-			uri = uri.normalize();
-			FileSystem fs = FileSystem.get(uri, conf, "hadoop");
-			Path outputPath = new Path(uri.getPath());
-			if (fs.exists(outputPath)) {
-				throw new Exception("output already exists");
+			context.getCounter("Progress", "current").increment(1);
+			Double newkey = keys[0];
+			for (int i = 1 ; i < keys.length ; i++)
+			{
+				Double tmp = Math.abs(Math.abs(position) - Math.abs(keys[i]));
+				if (tmp < newkey)		newkey = tmp;
 			}
-			OutputStream os = fs.create(outputPath);
-			//InputStream is = fs.create(null);
-			for(int i = 0; i < Integer.parseInt(conf.get("nbCluster")); i++){
-			}
-			
+			context.getCounter(newkey.toString(), "totalpos").increment(Long.parseLong(position.toString()));
+			context.getCounter(newkey.toString(), "totalelem").increment(1);
+			context.write(new DoubleWritable(newkey), tokens);
 		}
 	}
 	
-	public static class KMeans1DCombiner extends Reducer<Set<Point2D>, DoubleWritable, Set<Point2D>, DoubleWritable>
+	public static class KMeans1DCombiner extends Reducer<DoubleWritable, String[], DoubleWritable, String[]>
 	{
-		public void combine (Set<Point2D> key, DoubleWritable value, Context context)
-		{			
+		
+		public void combine (DoubleWritable key, String[] value, Context context)
+		{		
+			
 		}
 	}
 	
@@ -67,7 +71,9 @@ public class KMeans1DIt{
 			
 		}
 	}
-
+	
+	public static List<Double> centroids = null;
+	
 	public int run(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
 		Configuration conf = new Configuration();
 	    Job job = Job.getInstance(conf, "Projet");
