@@ -16,6 +16,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
@@ -30,7 +31,7 @@ import org.apache.hadoop.util.ToolRunner;
 
 public class KMeans1DIt{
 	
-	public static class KMeans1DItMapper extends Mapper<NullWritable, Text, DoubleWritable, String[]> {
+	public static class KMeans1DItMapper extends Mapper<NullWritable, Text, IntWritable, Text> {
 
 		public void map(LongWritable key, Text value, Context context) throws Exception {
 			if (key.get() == 0 ) return;
@@ -40,35 +41,52 @@ public class KMeans1DIt{
 			int colonne = Integer.parseInt(conf.get("numColonne"));
 			int nbCluster = Integer.parseInt(conf.get("nbCluster"));
 			Double[] keys = new Double[nbCluster];
-			Double position = Double.parseDouble(tokens[colonne]);
-			if(context.getCounter("Progress", "current").getValue() < nbCluster){
-				keys[(int) context.getCounter("Progress", "current").getValue()] = position;
+			String position = tokens[colonne];
+			IntWritable current = new IntWritable((int) context.getCounter("Progress", "current").getValue());
+			if(current.get() < nbCluster){
+				context.getCounter(current.toString(), tokens[colonne]).increment(Long.parseLong(position));
 			}
 			context.getCounter("Progress", "current").increment(1);
-			Double newkey = keys[0];
+			Double minValue = keys[0];
+			int newkey = 0;
 			for (int i = 1 ; i < keys.length ; i++)
 			{
-				Double tmp = Math.abs(Math.abs(position) - Math.abs(keys[i]));
-				if (tmp < newkey)		newkey = tmp;
+				Double tmp = Math.abs(Math.abs(Double.parseDouble(position)) - Math.abs(keys[i]));
+				if (tmp < minValue)		newkey = i;
 			}
-			context.getCounter(newkey.toString(), "totalpos").increment(Long.parseLong(position.toString()));
-			context.getCounter(newkey.toString(), "totalelem").increment(1);
-			context.write(new DoubleWritable(newkey), tokens);
+			IntWritable nkey = new IntWritable(newkey);
+			context.getCounter(nkey.toString(), "totalpos").increment(Long.parseLong(position));
+			context.getCounter(nkey.toString(), "totalelem").increment(1);
+			context.write(nkey, value);
 		}
 	}
 	
-	public static class KMeans1DCombiner extends Reducer<DoubleWritable, String[], DoubleWritable, String[]>
+	public static class KMeans1DCombiner extends Reducer<DoubleWritable, Text, DoubleWritable, String[]>
 	{
-		
-		public void combine (DoubleWritable key, String[] value, Context context)
+
+		public void combine (DoubleWritable key, Iterable<Text> value, Context context)
 		{		
 			
 		}
 	}
 	
-	public static class KMeans1DItReducer extends Reducer<Text, Text, Text, Text> {
-		public void reduce(Text key, Text value, Context context) throws IOException, InterruptedException {
-			
+	public static class KMeans1DItReducer extends Reducer<DoubleWritable, Text, Text, Text> {
+
+		private long[] tot = null;
+		private long[] elem = null;
+		private DoubleWritable[] keys = null;
+		private int clusters = 0;
+		
+		public void init(Context context)
+		{
+			clusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
+			keys = new DoubleWritable[clusters];
+			context
+		}
+		
+		
+		public void reduce(DoubleWritable key, Iterable<Text> value, Context context) throws IOException, InterruptedException {
+			context.
 		}
 	}
 	
@@ -79,7 +97,6 @@ public class KMeans1DIt{
 	    Job job = Job.getInstance(conf, "Projet");
 	    try {
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
-		    job.getConfiguration().set("input", args[0]);
 	    	job.getConfiguration().set("nbCluster", args[1]);
 	    	job.getConfiguration().set("numColonne", args[2]);
 	    }
@@ -96,6 +113,7 @@ public class KMeans1DIt{
 	    job.setOutputKeyClass(Text.class);
 	    job.setOutputValueClass(Text.class);
 	    job.setOutputFormatClass(TextOutputFormat.class);
+	   
 	    //FileOutputFormat.setOutputPath(job, new Path(args[2]));
 	    return job.waitForCompletion(true) ? 0 : 1;
 	}
