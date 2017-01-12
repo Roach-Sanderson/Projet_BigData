@@ -100,7 +100,7 @@ public class KMeans1DIt extends Configured implements Tool{
 				e.printStackTrace();
 				return;
 			}
-			int current = (int) key.get();
+			int current = Integer.parseInt(key.toString());
 			String elem[] = new String[3];
 			int newkey = 0;
 			if(current < nbClusters){
