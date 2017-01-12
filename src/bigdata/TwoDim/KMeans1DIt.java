@@ -3,9 +3,14 @@ package bigdata.TwoDim;
 
 import java.awt.geom.Point2D;
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -40,7 +45,7 @@ import org.apache.hadoop.util.ToolRunner;
 public class KMeans1DIt extends Configured implements Tool{
 	
 
-	public static class KMeans1DItMapper extends Mapper<LongWritable, Text, NullWritable, Text> {
+	public static class KMeans1DItMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 		
 		private double[] totalPosPerCluster = null;
 		private int[] totalElemPerCluster = null;
@@ -48,6 +53,7 @@ public class KMeans1DIt extends Configured implements Tool{
 		private int nbClusters = 0;
 		private double[] keys;
 		private Set<String[]> clusters = null;
+		public Path input;
 		
 		private boolean check()
 		{
@@ -64,7 +70,6 @@ public class KMeans1DIt extends Configured implements Tool{
 		
 		public void setup (Context context) throws IOException
 		{
-			Path input;
 			try
 			{
 				nbClusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
@@ -85,36 +90,36 @@ public class KMeans1DIt extends Configured implements Tool{
 				keys[i] = 0;
 				totalElemPerCluster[i] = 0;
 			}
-			Stream<String> lines = Files.lines((java.nio.file.Path) input);
-			Iterator<String> it = lines.iterator();
-			long min = Math.min((long) nbClusters, lines.count());
-			int i = 0;
-			while (i < min)
-			{
-				String s = it.next();
-				String tokens[] = s.split(",");
+			clusters = new HashSet<String[]>();
+			FileSystem fs = FileSystem.get(context.getConfiguration());
+			InputStreamReader isr = new InputStreamReader(fs.open(input));
+			BufferedReader br = new BufferedReader(isr);
+			String line;
+			line = br.readLine();
+			int nbLignes = 0;
+			while(line != null && nbLignes < nbClusters){
+				String tokens[] = line.split(",");
 				boolean isValid = true;
-				for (int j = 0 ; j < tokens.length ; j++)
+				for (int l = 0 ; l < tokens.length ; l++)
 				{
-					if (tokens[j].isEmpty())
+					if (tokens[l].isEmpty())
 						isValid = false;
 				}
 				if (isValid)
 				{
-					Double pos = Double.MAX_VALUE;
-					try
-					{
-						pos = Double.parseDouble(tokens[column]);
+					try {
+						keys[nbLignes] = Double.parseDouble(tokens[column]);
 					}
 					catch (Exception e)
 					{
+						e.printStackTrace();
 						return;
 					}
-					keys[i] = pos;
-					i++;
+					nbLignes++ ;
 				}
+				line = br.readLine();
+				
 			}
-			clusters = new HashSet<String[]>();
 		}
 
 		public void map(LongWritable key, Text value, Context context) {
@@ -134,24 +139,25 @@ public class KMeans1DIt extends Configured implements Tool{
 				e.printStackTrace();
 				return;
 			}
-			String elem[] = new String[3];
+			String elem[] = new String[4];
 			int newkey = 0;
-			context.getCounter("PONLIJngr", "oinjinujlijn").increment(key.get());
-			double dist = Math.abs(Math.abs(column) - Math.abs(keys[0]));
+			double dist = Math.abs(position - keys[0]);
 			for (int i = 1 ; i < nbClusters ; i++)
 			{
-				double tmp = Math.abs(Math.abs(column) - Math.abs(keys[i]));
+				double tmp = Math.abs(position - keys[i]);
 				if (tmp < dist)
 				{
+					
 					newkey = i;
 					dist = tmp;
 				}
 			}
-			totalPosPerCluster[newkey] += dist;
+			totalPosPerCluster[newkey] += position;
 			totalElemPerCluster[newkey] += 1;
 			elem[0] = new IntWritable(newkey).toString();
 			elem[1] = new DoubleWritable(position).toString();
 			elem[2] = value.toString();
+			elem[3] = key.toString(); 		// Pour garde rle fichier trié
 			clusters.add(elem);
 		}
 
@@ -162,35 +168,39 @@ public class KMeans1DIt extends Configured implements Tool{
 				for (int i = 0 ; i < nbClusters ; i++)
 				{
 					keys[i] = totalPosPerCluster[i] / totalElemPerCluster[i];
+					totalPosPerCluster[i] = 0;
+					totalElemPerCluster[i] = 0;
 				}
 				for(String[] elem : clusters)
 				{
-					double dist = Math.abs(Math.abs(Double.parseDouble(elem[1])) - Math.abs(keys[0]));
+					double dist = Math.abs(Double.parseDouble(elem[1]) - keys[0]);
 					elem[0] = new IntWritable(0).toString();
-					elem[1] = new DoubleWritable(dist).toString();
 					for (int i = 1 ; i < nbClusters ; i++)
 					{
-						double tmp = Math.abs(Math.abs(Double.parseDouble(elem[1])) - Math.abs(keys[i]));
+						double tmp = Math.abs(Double.parseDouble(elem[1]) - keys[i]);
 						if (tmp < dist)
 						{
-							elem[1] = new DoubleWritable(i).toString();
+							elem[0] = new IntWritable(i).toString();
+							dist = tmp;
 						}
 					}
+					totalElemPerCluster[Integer.parseInt(elem[0])] += 1;
+					totalPosPerCluster[Integer.parseInt(elem[0])] += Double.parseDouble(elem[1]);
 				}
 			}
 			for (String[] elem : clusters)
 			{
-				context.write(NullWritable.get(), new Text (elem[2] + ", " + elem[0]));
+				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + elem[0]));
 			}
 
 		}
 	}
 	
-	public static class KMeans1DItReducer extends Reducer<NullWritable, Text, NullWritable, Text> {
+	public static class KMeans1DItReducer extends Reducer<IntWritable, Text, NullWritable, Text> {
 
 	
 		
-		public void reduce(NullWritable key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+		public void reduce(IntWritable key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
 			for (Text elem : values)
 			{
 				context.write(NullWritable.get(), elem);
@@ -219,7 +229,7 @@ public class KMeans1DIt extends Configured implements Tool{
 	    job.setNumReduceTasks(1);
 	    job.setJarByClass(KMeans1DIt.class);
 	    job.setMapperClass(KMeans1DItMapper.class);
-	    job.setMapOutputKeyClass(NullWritable.class);
+	    job.setMapOutputKeyClass(IntWritable.class);
 	    job.setMapOutputValueClass(Text.class);
 	    job.setReducerClass(KMeans1DItReducer.class);
 	    job.setOutputKeyClass(NullWritable.class);
