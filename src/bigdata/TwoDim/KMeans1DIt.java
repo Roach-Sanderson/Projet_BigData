@@ -9,10 +9,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.Stack;
+import java.util.stream.Stream;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -59,12 +62,14 @@ public class KMeans1DIt extends Configured implements Tool{
 			return true;
 		}
 		
-		public void setup (Context context)
+		public void setup (Context context) throws IOException
 		{
+			Path input;
 			try
 			{
 				nbClusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
 				column = Integer.parseInt(context.getConfiguration().get("numColonne"));
+				input = new Path(context.getConfiguration().get("path"));
 			}
 			catch (Exception e)
 			{
@@ -79,7 +84,36 @@ public class KMeans1DIt extends Configured implements Tool{
 				totalPosPerCluster[i] = 0;
 				keys[i] = 0;
 				totalElemPerCluster[i] = 0;
-			}			
+			}
+			Stream<String> lines = Files.lines((java.nio.file.Path) input);
+			Iterator<String> it = lines.iterator();
+			long min = Math.min((long) nbClusters, lines.count());
+			int i = 0;
+			while (i < min)
+			{
+				String s = it.next();
+				String tokens[] = s.split(",");
+				boolean isValid = true;
+				for (int j = 0 ; j < tokens.length ; j++)
+				{
+					if (tokens[j].isEmpty())
+						isValid = false;
+				}
+				if (isValid)
+				{
+					Double pos = Double.MAX_VALUE;
+					try
+					{
+						pos = Double.parseDouble(tokens[column]);
+					}
+					catch (Exception e)
+					{
+						return;
+					}
+					keys[i] = pos;
+					i++;
+				}
+			}
 			clusters = new HashSet<String[]>();
 		}
 
@@ -100,32 +134,21 @@ public class KMeans1DIt extends Configured implements Tool{
 				e.printStackTrace();
 				return;
 			}
-			int current = Integer.parseInt(key.toString());
 			String elem[] = new String[3];
 			int newkey = 0;
-			if(current < nbClusters){
-				keys[current] = position;
-				totalPosPerCluster[current] += position;
-				totalElemPerCluster[current]++;
-				newkey = current;
-				
-			}
-			else
+			context.getCounter("PONLIJngr", "oinjinujlijn").increment(key.get());
+			double dist = Math.abs(Math.abs(column) - Math.abs(keys[0]));
+			for (int i = 1 ; i < nbClusters ; i++)
 			{
-				context.getCounter("PONLIJngr", "oinjinujlijn").increment(key.get());
-				double dist = Math.abs(Math.abs(column) - Math.abs(keys[0]));
-				for (int i = 1 ; i < nbClusters ; i++)
+				double tmp = Math.abs(Math.abs(column) - Math.abs(keys[i]));
+				if (tmp < dist)
 				{
-					double tmp = Math.abs(Math.abs(column) - Math.abs(keys[i]));
-					if (tmp < dist)
-					{
-						newkey = i;
-						dist = tmp;
-					}
+					newkey = i;
+					dist = tmp;
 				}
-				totalPosPerCluster[newkey] += dist;
-				totalElemPerCluster[newkey] += 1;
 			}
+			totalPosPerCluster[newkey] += dist;
+			totalElemPerCluster[newkey] += 1;
 			elem[0] = new IntWritable(newkey).toString();
 			elem[1] = new DoubleWritable(position).toString();
 			elem[2] = value.toString();
@@ -184,6 +207,7 @@ public class KMeans1DIt extends Configured implements Tool{
 	     
 	  try {
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
+		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
 	    	job.getConfiguration().set("nbCluster", args[2]);
 	    	job.getConfiguration().set("numColonne", args[3]);
