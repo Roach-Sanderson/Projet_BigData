@@ -9,6 +9,7 @@ public class BigData {
 		ProgramDriver pgd = new ProgramDriver();
 		int exitCode = -1;
 		try {
+			pgd.addClass("1d", bigdata.TwoDim.KMeans1DIt.class, "creates a kmeans");
 			exitCode = pgd.run(args);
 		} catch (Throwable e1)  {
 			e1.printStackTrace();
