@@ -29,14 +29,14 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 
-public class KMeans1DIt extends Configured implements Tool{
+public class KMeansND extends Configured implements Tool{
 	
 
-	public static class KMeans1DItMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
+	public static class KMeansNDMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 		
 		private double[] totalPosPerCluster = null;
 		private int[] totalElemPerCluster = null;
-		public int column = 0;
+		public String[] column = null;
 		private int nbClusters = 0;
 		private double[] keys;
 		private Set<String[]> clusters = null;
@@ -72,7 +72,7 @@ public class KMeans1DIt extends Configured implements Tool{
 			try
 			{
 				nbClusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
-				column = Integer.parseInt(context.getConfiguration().get("numColonne"));
+				column = context.getConfiguration().get("numColonne").split(",");
 				input = new Path(context.getConfiguration().get("path"));
 			}
 			catch (Exception e)
@@ -95,7 +95,6 @@ public class KMeans1DIt extends Configured implements Tool{
 			BufferedReader br = new BufferedReader(isr);
 			Stream<String>lines = br.lines();
 			int nbLignes = 0;
-			int mauLignes = 0;
 			Iterator<String> it = lines.iterator();
 			while(it.hasNext() && nbLignes < nbClusters){
 				String tokens[] = it.next().split(",");
@@ -107,15 +106,19 @@ public class KMeans1DIt extends Configured implements Tool{
 				}
 				Double pos = 0.0;
 				try {
-					pos = Double.parseDouble(tokens[column]);
+					for (int l = 0 ; l < column.length ; l++)
+					{
+						pos += (Double.parseDouble(column[l]) * Double.parseDouble(column[l]));	
+					}
 				}
 				catch (Exception e)
 				{
 					e.printStackTrace();
 				}
+				pos = Math.sqrt(pos);
 				if (isValid && notIn(pos))
 				{
-					keys[nbLignes - mauLignes] = pos;
+					keys[nbLignes] = pos;
 					nbLignes++;
 				}
 			}
@@ -128,16 +131,18 @@ public class KMeans1DIt extends Configured implements Tool{
 				if (tokens[i].isEmpty()) 
 					return;
 			}
-			Double position;
+			Double position = 0.0;
 			try
 			{
-				position = Double.parseDouble(tokens[column]);
+				for (int i = 0 ; i < column.length ; i++)
+					position += (Double.parseDouble(column[i]) * Double.parseDouble(column[i]));
 			}
 			catch (Exception e)
 			{
 				e.printStackTrace();
 				return;
 			}
+			position = Math.sqrt(position);
 			String elem[] = new String[4];
 			int newkey = 0;
 			double dist = Math.abs(position - keys[0]);
@@ -195,7 +200,7 @@ public class KMeans1DIt extends Configured implements Tool{
 		}
 	}
 	
-	public static class KMeans1DItReducer extends Reducer<IntWritable, Text, NullWritable, Text> {
+	public static class KMeansNDItReducer extends Reducer<IntWritable, Text, NullWritable, Text> {
 
 	
 		
@@ -219,18 +224,27 @@ public class KMeans1DIt extends Configured implements Tool{
 		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
 	    	job.getConfiguration().set("nbCluster", args[2]);
-	    	job.getConfiguration().set("numColonne", args[3]);
+	    	StringBuffer s = new StringBuffer();
+	    	for (int i = 3 ; i < args.length ; i++)
+	    	{
+	    		if (i != 3)
+	    		{
+	    			s.append(", ");
+	    		}
+	    		s.append(args[i]);
+	    	}	    		
+	    	job.getConfiguration().set("numColonne", s.toString());
 	    }
 	    catch (Exception e)
 	    {
 	    	System.out.println(" bad arguments, waiting for 3 arguments [inputURI] [Integer] [Integer]");
 	    }
 	    job.setNumReduceTasks(1);
-	    job.setJarByClass(KMeans1DIt.class);
-	    job.setMapperClass(KMeans1DItMapper.class);
+	    job.setJarByClass(KMeansND.class);
+	    job.setMapperClass(KMeansNDMapper.class);
 	    job.setMapOutputKeyClass(IntWritable.class);
 	    job.setMapOutputValueClass(Text.class);
-	    job.setReducerClass(KMeans1DItReducer.class);
+	    job.setReducerClass(KMeansNDItReducer.class);
 	    job.setOutputKeyClass(NullWritable.class);
 	    job.setOutputValueClass(Text.class);
 	    job.setOutputFormatClass(TextOutputFormat.class);
@@ -238,6 +252,6 @@ public class KMeans1DIt extends Configured implements Tool{
 	}
 	
 	public static void main(String args[]) throws Exception {
-		System.exit(ToolRunner.run(new KMeans1DIt(), args));
+		System.exit(ToolRunner.run(new KMeansND(), args));
 	}
 }
