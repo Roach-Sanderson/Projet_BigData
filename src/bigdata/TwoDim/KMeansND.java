@@ -113,7 +113,7 @@ public class KMeansND extends Configured implements Tool{
 						pos *= pos;
 						tmp = Double.parseDouble(tokens[Integer.parseInt(column[l])]);
 						pos += (tmp * tmp);
-						Math.sqrt(Math.abs(pos));
+						pos = Math.sqrt(Math.abs(pos));
 						}
 						catch (Exception e)
 						{
@@ -175,7 +175,10 @@ public class KMeansND extends Configured implements Tool{
 			{
 				for (int i = 0 ; i < nbClusters ; i++)
 				{
-					keys[i] = totalPosPerCluster[i] / totalElemPerCluster[i];
+					if (totalElemPerCluster[i] == 0)
+						keys[i] = totalPosPerCluster[i];
+					else
+						keys[i] = totalPosPerCluster[i] / totalElemPerCluster[i];
 					totalPosPerCluster[i] = 0;
 					totalElemPerCluster[i] = 0;
 				}
@@ -198,7 +201,7 @@ public class KMeansND extends Configured implements Tool{
 			}
 			for (String[] elem : clusters)
 			{
-				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + keys[1]));
+				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + elem[0]));
 			}
 
 		}
