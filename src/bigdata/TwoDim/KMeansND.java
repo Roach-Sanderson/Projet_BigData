@@ -86,7 +86,7 @@ public class KMeansND extends Configured implements Tool{
 			for (int i = 0 ; i < nbClusters ; i++)
 			{
 				totalPosPerCluster[i] = 0;
-				keys[i] = 0;
+				keys[i] = 0.0;
 				totalElemPerCluster[i] = 0;
 			}
 			clusters = new HashSet<String[]>();
@@ -105,19 +105,23 @@ public class KMeansND extends Configured implements Tool{
 						isValid = false;
 				}
 				Double pos = 0.0;
-				try {
+				Double tmp = 0.0;
+				
 					for (int l = 0 ; l < column.length ; l++)
 					{
-						pos += (Double.parseDouble(column[l]) * Double.parseDouble(column[l]));	
+						try {
+						pos *= pos;
+						tmp = Double.parseDouble(tokens[Integer.parseInt(column[l])]);
+						pos += (tmp * tmp);
+						Math.sqrt(Math.abs(pos));
+						}
+						catch (Exception e)
+						{
+							e.printStackTrace();
+						}
 					}
-				}
-				catch (Exception e)
-				{
-					e.printStackTrace();
-				}
-				pos = Math.sqrt(pos);
 				if (isValid && notIn(pos))
-				{
+				{			
 					keys[nbLignes] = pos;
 					nbLignes++;
 				}
@@ -135,14 +139,14 @@ public class KMeansND extends Configured implements Tool{
 			try
 			{
 				for (int i = 0 ; i < column.length ; i++)
-					position += (Double.parseDouble(column[i]) * Double.parseDouble(column[i]));
+					position += (Double.parseDouble(tokens[Integer.parseInt(column[i])]) * Double.parseDouble(tokens[Integer.parseInt(column[i])]));
 			}
 			catch (Exception e)
 			{
 				e.printStackTrace();
 				return;
 			}
-			position = Math.sqrt(position);
+			position = Math.sqrt(Math.abs(position));
 			String elem[] = new String[4];
 			int newkey = 0;
 			double dist = Math.abs(position - keys[0]);
@@ -194,7 +198,7 @@ public class KMeansND extends Configured implements Tool{
 			}
 			for (String[] elem : clusters)
 			{
-				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + elem[0]));
+				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + keys[1]));
 			}
 
 		}
@@ -229,7 +233,7 @@ public class KMeansND extends Configured implements Tool{
 	    	{
 	    		if (i != 3)
 	    		{
-	    			s.append(", ");
+	    			s.append(",");
 	    		}
 	    		s.append(args[i]);
 	    	}	    		
