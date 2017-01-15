@@ -228,7 +228,7 @@ public class KMeansND extends Configured implements Tool{
 							}
 							sb.append(tokens[c]);
 						}
-						sb.append(","+newCluster); /* Appends the new cluster where the point belongs */
+						sb.append(","+newCluster); /* Appends the new cluster in which the point belongs */
 						bw.write(sb.toString());
 					}
 					catch (Exception e){
