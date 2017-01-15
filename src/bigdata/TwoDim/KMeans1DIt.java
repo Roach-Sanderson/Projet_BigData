@@ -2,8 +2,11 @@ package bigdata.TwoDim;
 
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.URI;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -41,6 +44,8 @@ public class KMeans1DIt extends Configured implements Tool{
 		private double[] keys;
 		private Set<String[]> clusters = null;
 		public Path input;
+		private URI[] uris;
+		private File file;
 		
 		private boolean check()
 		{
@@ -91,9 +96,12 @@ public class KMeans1DIt extends Configured implements Tool{
 			}
 			clusters = new HashSet<String[]>();
 			FileSystem fs = FileSystem.get(context.getConfiguration());
-			InputStreamReader isr = new InputStreamReader(fs.open(input));
-			BufferedReader br = new BufferedReader(isr);
-			Stream<String>lines = br.lines();
+			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
+				uris = context.getCacheFiles();
+			file = new File("tmp_results");
+			OutputStream out = fs.create(new Path(file.getPath()), true);
+			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath())))));	
+			Stream<String>lines = reader.lines();
 			int nbLignes = 0;
 			int mauLignes = 0;
 			Iterator<String> it = lines.iterator();
@@ -212,8 +220,8 @@ public class KMeans1DIt extends Configured implements Tool{
 	
 	public int run(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
 		Configuration conf = new Configuration();
-	    Job job = Job.getInstance(conf, "Projet");
-	     
+		Job job = Job.getInstance(conf, "Projet");
+		job.addCacheFile(new Path(args[0]).toUri());
 	  try {
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
 		    job.getConfiguration().set("path", args[0]);
