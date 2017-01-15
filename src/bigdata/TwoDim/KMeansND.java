@@ -4,19 +4,13 @@ package bigdata.TwoDim;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import org.apache.hadoop.conf.Configuration;
@@ -28,14 +22,12 @@ import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapred.lib.MultipleOutputs;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
@@ -50,19 +42,21 @@ public class KMeansND extends Configured implements Tool{
 		public String[] column = null;
 		private int nbClusters = 0;
 		private double[] keys;
-		private Set<String[]> clusters = null;
-		public Path input;
 		private BufferedWriter bw = null;
 		private BufferedReader br = null;
-		private File file;
-		private URI[] uris;
+		private File cached_input;
+		private URI[] cached_uris;
 		
 		private boolean check()
 		{
 			for (int i = 0 ; i < nbClusters ; i++)
 			{
-				double tmp2 = Math.abs((totalPosPerCluster[i] / totalElemPerCluster[i]) - keys[i]);
-				if (tmp2 > 0.1)
+				double convergence;
+				if(totalElemPerCluster[i] == 0)
+					convergence = 0.0;
+				else
+					convergence = Math.abs((totalPosPerCluster[i] / totalElemPerCluster[i]) - keys[i]);
+				if (convergence > 0.1)
 				{
 					return false;
 				}
@@ -84,11 +78,11 @@ public class KMeansND extends Configured implements Tool{
 		
 		public void setup (Context context) throws IOException
 		{
+			Configuration conf = context.getConfiguration();
 			try
 			{
-				nbClusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
-				column = context.getConfiguration().get("numColonne").split(",");
-				input = new Path(context.getConfiguration().get("path"));
+				nbClusters = Integer.parseInt(conf.get("nbCluster"));
+				column = conf.get("numColonne").split(",");
 			}
 			catch (Exception e)
 			{
@@ -104,15 +98,19 @@ public class KMeansND extends Configured implements Tool{
 				keys[i] = 0.0;
 				totalElemPerCluster[i] = 0;
 			}
-			clusters = new HashSet<String[]>();
-			FileSystem fs = FileSystem.get(context.getConfiguration());
+			FileSystem fs = FileSystem.get(conf);
 			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
-				uris = context.getCacheFiles();
-			file = new File("tmp_results");
-			OutputStream out = fs.create(new Path(file.getPath()), true);
-			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath())))));			
+				cached_uris = context.getCacheFiles();
+			cached_input = new File("tmp_results");
+			if (!(cached_input.exists()))
+				cached_input.createNewFile();
+			OutputStream out = fs.create(new Path(cached_input.getPath()), true);
+			BufferedReader cached_reader = new BufferedReader(
+					new InputStreamReader(fs.open(
+							(new Path((cached_uris[0]).getPath()))
+							)));			
 			bw = new BufferedWriter(new OutputStreamWriter(out));
-			Stream<String>lines = reader.lines();
+			Stream<String> lines = cached_reader.lines();
 			int nbLignes = 0;
 			Iterator<String> it = lines.iterator();
 			while(it.hasNext() && nbLignes < nbClusters){
@@ -123,25 +121,25 @@ public class KMeansND extends Configured implements Tool{
 					if (tokens[l].isEmpty())
 						isValid = false;
 				}
-				Double pos = 0.0;
-				Double tmp = 0.0;
+				Double position = 0.0;
+				Double currentColumn = 0.0;
 				
 					for (int l = 0 ; l < column.length ; l++)
 					{
 						try {
-						pos *= pos;
-						tmp = Double.parseDouble(tokens[Integer.parseInt(column[l])]);
-						pos += (tmp * tmp);
-						pos = Math.sqrt(Math.abs(pos));
+						position *= position;
+						currentColumn = Double.parseDouble(tokens[Integer.parseInt(column[l])]);
+						position += (currentColumn * currentColumn);
+						position = Math.sqrt(Math.abs(position));
 						}
 						catch (Exception e)
 						{
 							e.printStackTrace();
 						}
 					}
-				if (isValid && notIn(pos))
+				if (isValid && notIn(position))
 				{			
-					keys[nbLignes] = pos;
+					keys[nbLignes] = position;
 					nbLignes++;
 				}
 			}
@@ -149,11 +147,6 @@ public class KMeansND extends Configured implements Tool{
 
 		public void map(LongWritable key, Text value, Context context) throws IOException {
 			String tokens[] = value.toString().split(",");
-			/*for (int i = 0 ; i < tokens.length ; i++)
-			{
-				if (tokens[i].isEmpty()) 
-					return;
-			}*/
 			Double position = 0.0;
 			try
 			{
@@ -166,43 +159,37 @@ public class KMeansND extends Configured implements Tool{
 				return;
 			}
 			position = Math.sqrt(Math.abs(position));
-			String elem[] = new String[4];
-			int newkey = 0;
-			double dist = Math.abs(position - keys[0]);
+			int newKey = 0;
+			double distance = Math.abs(position - keys[0]);
 			for (int i = 1 ; i < nbClusters ; i++)
 			{
-				double tmp = Math.abs(position - keys[i]);
-				if (tmp < dist)
+				double currentDistance = Math.abs(position - keys[i]);
+				if (currentDistance < distance)
 				{
 					
-					newkey = i;
-					dist = tmp;
+					newKey = i;
+					distance = currentDistance;
 				}
 			}
-			totalPosPerCluster[newkey] += position;
-			totalElemPerCluster[newkey] += 1;
-			bw.write(key.toString() + "," + value + "," + new DoubleWritable(position).toString() + "," + new IntWritable(newkey).toString());
+			totalPosPerCluster[newKey] += position;
+			totalElemPerCluster[newKey] += 1;
+			bw.write(key.toString() + "," + value + "," + new DoubleWritable(position).toString() + "," + new IntWritable(newKey).toString());
 			bw.newLine();
-			/*elem[0] = new IntWritable(newkey).toString();
-			elem[1] = new DoubleWritable(position).toString();
-			elem[2] = value.toString();
-			elem[3] = key.toString(); 		// Pour garde rle fichier trié
-			clusters.add(elem);*/
 		}
 
 		public void cleanup(Context context) throws IOException, InterruptedException
 		{
 			FileSystem fs = FileSystem.get(context.getConfiguration());
-			int cpt = 1 ;
-			while(cpt > 0)
+			int cpt = 0;
+			while(!(check()))
 			{
-				cpt--;
-				InputStreamReader isr = new InputStreamReader(fs.open(new Path(file.getPath())));
-			//	fs.delete(new Path(os), true);
-				File tmpFile = new File("tmp_results"+new IntWritable(cpt).toString());
-				OutputStream out = fs.create(new Path(tmpFile.getPath()), new Progressable(){public void progress(){}});
+				cpt++;
+				File currentResults = new File("tmp_results"+new IntWritable(cpt).toString());
+				if (!(currentResults.exists()))
+					currentResults.createNewFile();
+				OutputStream out = fs.create(new Path(currentResults.getPath()), true);
 				bw = new BufferedWriter(new OutputStreamWriter(out));
-				br = new BufferedReader(isr);
+				br = new BufferedReader(new InputStreamReader(fs.open((new Path((cached_uris[0]).getPath())))));;
 				for (int i = 0 ; i < nbClusters ; i++)
 				{
 					if (totalElemPerCluster[i] == 0)
@@ -218,19 +205,19 @@ public class KMeansND extends Configured implements Tool{
 					String[] tokens = line.split(",");
 					try
 					{
-						double dist = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[0]);					
-						String newCluster = tokens[tokens.length - 1];
+						double distance = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[0]);					
+						String newCluster = new IntWritable(0).toString();
 						for (int i = 1 ; i < nbClusters ; i++)
 						{
-							double tmp = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[i]);
-							if (tmp < dist)
+							double currentDistance = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[i]);
+							if (currentDistance < distance)
 							{
 								newCluster = new IntWritable(i).toString();
-								dist = tmp;
+								distance = currentDistance;
 							}
 						}
 						totalElemPerCluster[Integer.parseInt(newCluster)] += 1;
-						totalPosPerCluster[Integer.parseInt(newCluster)] += dist;
+						totalPosPerCluster[Integer.parseInt(newCluster)] += distance;
 						StringBuffer sb = new StringBuffer("");
 						for (int c = 0 ; c < tokens.length - 1 ; c++)
 						{
@@ -269,16 +256,19 @@ public class KMeansND extends Configured implements Tool{
 				}
 				try
 				{
-					context.write(new IntWritable(Integer.parseInt(tokens[0])), new Text (value.toString() + ", " + Integer.parseInt(tokens[tokens.length - 1])));				}
+					context.write(new IntWritable(Integer.parseInt(tokens[0])), new Text (value.toString() + ", " + Integer.parseInt(tokens[tokens.length - 1])));				
+				}
 				catch (Exception e)
 				{
 					e.printStackTrace();
 				}
 				line = br.readLine();
 			}
-			//br.close();
-			//bw.close();
-			//
+			if(cached_input.exists())
+				fs.delete(new Path(cached_input.getPath()), true);
+			for(;cpt > 0; cpt--){
+				fs.delete(new Path("tmp_results"+cpt), true);
+			}
 		}
 	}
 	
@@ -303,7 +293,6 @@ public class KMeansND extends Configured implements Tool{
 	    job.addCacheFile(new Path(args[0]).toUri());
 	    try {
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
-		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
 	    	job.getConfiguration().set("nbCluster", args[2]);
 	    	job.addCacheFile(new Path(args[0]).toUri());

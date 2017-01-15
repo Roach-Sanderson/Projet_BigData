@@ -5,7 +5,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.URI;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -45,6 +44,7 @@ public class KMeans1DIt extends Configured implements Tool{
 		private Set<String[]> clusters = null;
 		public Path input;
 		private URI[] uris;
+		@SuppressWarnings("unused")
 		private File file;
 		
 		private boolean check()
@@ -99,7 +99,6 @@ public class KMeans1DIt extends Configured implements Tool{
 			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
 				uris = context.getCacheFiles();
 			file = new File("tmp_results");
-			OutputStream out = fs.create(new Path(file.getPath()), true);
 			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath())))));	
 			Stream<String>lines = reader.lines();
 			int nbLignes = 0;
