@@ -36,18 +36,18 @@ public class KMeans1DIt extends Configured implements Tool{
 
 	public static class KMeans1DItMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 		
-		private double[] totalPosPerCluster = null;
-		private int[] totalElemPerCluster = null;
-		public int column = 0;
-		private int nbClusters = 0;
-		private double[] keys;
-		private Set<String[]> clusters = null;
-		public Path input;
-		private URI[] uris;
+		private double[] totalPosPerCluster = null; // Array which contains the sum of the positions of each element in one cluster.
+		private int[] totalElemPerCluster = null; // Array which contains the number of elements for each cluster.
+		public int column = 0; // Array which contains the number of the column which contains coordinates of each point.
+		private int nbClusters = 0; // Number of clusters, specified in args.
+		private double[] keys; // Array which contains the coordinates of each pivot.
+		private Set<String[]> clusters = null; // Set which contains all lines of the input file with its associated pivot, position and key.
+		public Path input; // The input in args.
+		private URI[] uris; // Array which contains the URI of all the cache files.
 		@SuppressWarnings("unused")
-		private File file;
+		private File file; // The input in args contained in a cache file.
 		
-		private boolean check()
+		private boolean check() /* Checks if we have to stop the algorithm */
 		{
 			for (int i = 0 ; i < nbClusters ; i++)
 			{
@@ -60,7 +60,7 @@ public class KMeans1DIt extends Configured implements Tool{
 			return true;
 		}
 		
-		private boolean notIn(Double d)
+		private boolean notIn(Double d) /* Check for key duplication */
 		{
 			for (int i = 0 ; i < keys.length ; i++)
 			{
@@ -74,7 +74,7 @@ public class KMeans1DIt extends Configured implements Tool{
 		
 		public void setup (Context context) throws IOException
 		{
-			try
+			try /* args parsing */
 			{
 				nbClusters = Integer.parseInt(context.getConfiguration().get("nbCluster"));
 				column = Integer.parseInt(context.getConfiguration().get("numColonne"));
@@ -88,7 +88,7 @@ public class KMeans1DIt extends Configured implements Tool{
 			totalPosPerCluster = new double[nbClusters];
 			totalElemPerCluster = new int[nbClusters];
 			keys = new double[nbClusters];
-			for (int i = 0 ; i < nbClusters ; i++)
+			for (int i = 0 ; i < nbClusters ; i++) /* array initialization */
 			{
 				totalPosPerCluster[i] = 0;
 				keys[i] = 0;
@@ -98,13 +98,13 @@ public class KMeans1DIt extends Configured implements Tool{
 			FileSystem fs = FileSystem.get(context.getConfiguration());
 			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
 				uris = context.getCacheFiles();
-			file = new File("tmp_results");
-			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath())))));	
+			file = new File("tmp_results"); /* get the cache file */
+			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath()))))); /*reader of the cache file */
 			Stream<String>lines = reader.lines();
 			int nbLignes = 0;
 			int mauLignes = 0;
 			Iterator<String> it = lines.iterator();
-			while(it.hasNext() && nbLignes < nbClusters){
+			while(it.hasNext() && nbLignes < nbClusters){ /* Fill up the key array w/o side effects */
 				String tokens[] = it.next().split(",");
 				boolean isValid = true;
 				for (int l = 0 ; l < tokens.length ; l++)
@@ -130,13 +130,13 @@ public class KMeans1DIt extends Configured implements Tool{
 
 		public void map(LongWritable key, Text value, Context context) {
 			String tokens[] = value.toString().split(",");
-			for (int i = 0 ; i < tokens.length ; i++)
+			for (int i = 0 ; i < tokens.length ; i++) // Check if the line is valid (not empty column(s))
 			{
 				if (tokens[i].isEmpty()) 
 					return;
 			}
 			Double position;
-			try
+			try  // Tries to parse the position given by column and keeps it.
 			{
 				position = Double.parseDouble(tokens[column]);
 			}
@@ -148,7 +148,7 @@ public class KMeans1DIt extends Configured implements Tool{
 			String elem[] = new String[4];
 			int newkey = 0;
 			double dist = Math.abs(position - keys[0]);
-			for (int i = 1 ; i < nbClusters ; i++)
+			for (int i = 1 ; i < nbClusters ; i++) /* Decides which point belongs to which cluster */
 			{
 				double tmp = Math.abs(position - keys[i]);
 				if (tmp < dist)
@@ -160,24 +160,24 @@ public class KMeans1DIt extends Configured implements Tool{
 			}
 			totalPosPerCluster[newkey] += position;
 			totalElemPerCluster[newkey] += 1;
-			elem[0] = new IntWritable(newkey).toString();
-			elem[1] = new DoubleWritable(position).toString();
-			elem[2] = value.toString();
-			elem[3] = key.toString(); 		// Pour garde rle fichier trié
+			elem[0] = new IntWritable(newkey).toString(); // Number of the cluster in which the line belongs
+			elem[1] = new DoubleWritable(position).toString(); // Position of the point
+			elem[2] = value.toString();	// Whole line
+			elem[3] = key.toString(); 	// Position in file
 			clusters.add(elem);
 		}
 
 		public void cleanup(Context context) throws IOException, InterruptedException
 		{
-			while(!check())
+			while(!check()) /* While we haven't find a good convergence value */
 			{
-				for (int i = 0 ; i < nbClusters ; i++)
+				for (int i = 0 ; i < nbClusters ; i++) /* Calculate the average of keys position */
 				{
 					keys[i] = totalPosPerCluster[i] / totalElemPerCluster[i];
 					totalPosPerCluster[i] = 0;
 					totalElemPerCluster[i] = 0;
 				}
-				for(String[] elem : clusters)
+				for(String[] elem : clusters) /* Recalculate the values with the new clusters for each point. Same way as map does.*/
 				{
 					double dist = Math.abs(Double.parseDouble(elem[1]) - keys[0]);
 					elem[0] = new IntWritable(0).toString();
@@ -196,7 +196,9 @@ public class KMeans1DIt extends Configured implements Tool{
 			}
 			for (String[] elem : clusters)
 			{
-				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + elem[0]));
+				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] // The whole line of the input file
+						+ ", " 
+						+ elem[0])); // The cluster in which the line belongs 
 			}
 
 		}
@@ -221,7 +223,7 @@ public class KMeans1DIt extends Configured implements Tool{
 		Configuration conf = new Configuration();
 		Job job = Job.getInstance(conf, "Projet");
 		job.addCacheFile(new Path(args[0]).toUri());
-	  try {
+	  try {		// Parse all arguments
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
 		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
