@@ -2,8 +2,16 @@ package bigdata.TwoDim;
 
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -25,6 +33,7 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
@@ -41,6 +50,9 @@ public class KMeansND extends Configured implements Tool{
 		private double[] keys;
 		private Set<String[]> clusters = null;
 		public Path input;
+		private BufferedWriter bw = null;
+		private BufferedReader br = null;
+		private String os = null;
 		
 		private boolean check()
 		{
@@ -91,8 +103,13 @@ public class KMeansND extends Configured implements Tool{
 			}
 			clusters = new HashSet<String[]>();
 			FileSystem fs = FileSystem.get(context.getConfiguration());
+			os = "tmp_results";
+			OutputStream out = fs.create(new Path(os), true);
+			
 			InputStreamReader isr = new InputStreamReader(fs.open(input));
-			BufferedReader br = new BufferedReader(isr);
+			//context.getConfiguration().addResource(new Path(os));
+			bw = new BufferedWriter(new OutputStreamWriter(out));
+			br = new BufferedReader(isr);
 			Stream<String>lines = br.lines();
 			int nbLignes = 0;
 			Iterator<String> it = lines.iterator();
@@ -128,13 +145,13 @@ public class KMeansND extends Configured implements Tool{
 			}
 		}
 
-		public void map(LongWritable key, Text value, Context context) {
+		public void map(LongWritable key, Text value, Context context) throws IOException {
 			String tokens[] = value.toString().split(",");
-			for (int i = 0 ; i < tokens.length ; i++)
+			/*for (int i = 0 ; i < tokens.length ; i++)
 			{
 				if (tokens[i].isEmpty()) 
 					return;
-			}
+			}*/
 			Double position = 0.0;
 			try
 			{
@@ -162,17 +179,28 @@ public class KMeansND extends Configured implements Tool{
 			}
 			totalPosPerCluster[newkey] += position;
 			totalElemPerCluster[newkey] += 1;
-			elem[0] = new IntWritable(newkey).toString();
+			bw.write(key.toString() + "," + value + "," + new DoubleWritable(position).toString() + "," + new IntWritable(newkey).toString());
+			bw.newLine();
+			/*elem[0] = new IntWritable(newkey).toString();
 			elem[1] = new DoubleWritable(position).toString();
 			elem[2] = value.toString();
 			elem[3] = key.toString(); 		// Pour garde rle fichier trié
-			clusters.add(elem);
+			clusters.add(elem);*/
 		}
 
 		public void cleanup(Context context) throws IOException, InterruptedException
 		{
-			while(!check())
+			FileSystem fs = FileSystem.get(context.getConfiguration());
+			int cpt = 1 ;
+		/*	while(cpt > 0)
 			{
+				cpt--;
+				InputStreamReader isr = new InputStreamReader(fs.open(new Path(os)));
+			//	fs.delete(new Path(os), true);
+				os = "tmp_result" + new IntWritable(cpt).toString();
+				OutputStream out = fs.create(new Path(os), new Progressable(){public void progress(){}});
+				bw = new BufferedWriter(new OutputStreamWriter(out));
+				br = new BufferedReader(isr);
 				for (int i = 0 ; i < nbClusters ; i++)
 				{
 					if (totalElemPerCluster[i] == 0)
@@ -182,28 +210,72 @@ public class KMeansND extends Configured implements Tool{
 					totalPosPerCluster[i] = 0;
 					totalElemPerCluster[i] = 0;
 				}
-				for(String[] elem : clusters)
+				String line = br.readLine();
+				while(line != null)
 				{
-					double dist = Math.abs(Double.parseDouble(elem[1]) - keys[0]);
-					elem[0] = new IntWritable(0).toString();
-					for (int i = 1 ; i < nbClusters ; i++)
+					String[] tokens = line.split(",");
+					try
 					{
-						double tmp = Math.abs(Double.parseDouble(elem[1]) - keys[i]);
-						if (tmp < dist)
+						double dist = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[0]);					
+						String newCluster = tokens[tokens.length - 1];
+						for (int i = 1 ; i < nbClusters ; i++)
 						{
-							elem[0] = new IntWritable(i).toString();
-							dist = tmp;
+							double tmp = Math.abs(Double.parseDouble(tokens[tokens.length - 2]) - keys[i]);
+							if (tmp < dist)
+							{
+								newCluster = new IntWritable(i).toString();
+								dist = tmp;
+							}
 						}
+						totalElemPerCluster[Integer.parseInt(newCluster)] += 1;
+						totalPosPerCluster[Integer.parseInt(newCluster)] += dist;
+						StringBuffer sb = new StringBuffer("");
+						for (int c = 0 ; c < tokens.length - 1 ; c++)
+						{
+							if (c != 0)
+							{
+								sb.append(",");
+							}
+							sb.append(tokens[c]);
+						}
+						bw.write(sb.toString());
 					}
-					totalElemPerCluster[Integer.parseInt(elem[0])] += 1;
-					totalPosPerCluster[Integer.parseInt(elem[0])] += Double.parseDouble(elem[1]);
+					catch (Exception e){
+						e.printStackTrace();
+						bw.write(tokens.toString());
+					}
+					bw.newLine();
+					line = br.readLine();
 				}
-			}
-			for (String[] elem : clusters)
+			}*/
+			InputStreamReader isr = new InputStreamReader(fs.open(new Path(os)));
+			
+			br = new BufferedReader(isr);
+			String line = br.readLine();
+			while(line != null)
 			{
-				context.write(new IntWritable(Integer.parseInt(elem[3])), new Text (elem[2] + ", " + elem[0]));
+				String[] tokens = line.split(",");
+				StringBuffer value = new StringBuffer("");
+				for (int i = 1 ; i < tokens.length - 2 ; i++)
+				{
+					if (i != 1)
+					{
+						value.append(",");
+					}
+					value.append(tokens[i]);
+				}
+				try
+				{
+					context.write(new IntWritable(Integer.parseInt(tokens[0])), new Text (value.toString() + ", " + Integer.parseInt(tokens[tokens.length - 1])));				}
+				catch (Exception e)
+				{
+					e.printStackTrace();
+				}
+				line = br.readLine();
 			}
-
+			//br.close();
+			//bw.close();
+			//
 		}
 	}
 	
@@ -225,8 +297,8 @@ public class KMeansND extends Configured implements Tool{
 	public int run(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
 		Configuration conf = new Configuration();
 	    Job job = Job.getInstance(conf, "Projet");
-	     
-	  try {
+	    job.addCacheFile(new Path(args[0]).toUri());
+	    try {
 		    FileInputFormat.addInputPath(job, new Path(args[0]));
 		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
