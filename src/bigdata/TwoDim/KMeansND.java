@@ -6,6 +6,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -27,6 +28,7 @@ import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.lib.MultipleOutputs;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -52,7 +54,8 @@ public class KMeansND extends Configured implements Tool{
 		public Path input;
 		private BufferedWriter bw = null;
 		private BufferedReader br = null;
-		private String os = null;
+		private File file;
+		private URI[] uris;
 		
 		private boolean check()
 		{
@@ -103,14 +106,13 @@ public class KMeansND extends Configured implements Tool{
 			}
 			clusters = new HashSet<String[]>();
 			FileSystem fs = FileSystem.get(context.getConfiguration());
-			os = "tmp_results";
-			OutputStream out = fs.create(new Path(os), true);
-			
-			InputStreamReader isr = new InputStreamReader(fs.open(input));
-			//context.getConfiguration().addResource(new Path(os));
+			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
+				uris = context.getCacheFiles();
+			file = new File("tmp_results");
+			OutputStream out = fs.create(new Path(file.getPath()), true);
+			BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open((new Path((uris[0]).getPath())))));			
 			bw = new BufferedWriter(new OutputStreamWriter(out));
-			br = new BufferedReader(isr);
-			Stream<String>lines = br.lines();
+			Stream<String>lines = reader.lines();
 			int nbLignes = 0;
 			Iterator<String> it = lines.iterator();
 			while(it.hasNext() && nbLignes < nbClusters){
@@ -192,13 +194,13 @@ public class KMeansND extends Configured implements Tool{
 		{
 			FileSystem fs = FileSystem.get(context.getConfiguration());
 			int cpt = 1 ;
-		/*	while(cpt > 0)
+			while(cpt > 0)
 			{
 				cpt--;
-				InputStreamReader isr = new InputStreamReader(fs.open(new Path(os)));
+				InputStreamReader isr = new InputStreamReader(fs.open(new Path(file.getPath())));
 			//	fs.delete(new Path(os), true);
-				os = "tmp_result" + new IntWritable(cpt).toString();
-				OutputStream out = fs.create(new Path(os), new Progressable(){public void progress(){}});
+				File tmpFile = new File("tmp_results"+new IntWritable(cpt).toString());
+				OutputStream out = fs.create(new Path(tmpFile.getPath()), new Progressable(){public void progress(){}});
 				bw = new BufferedWriter(new OutputStreamWriter(out));
 				br = new BufferedReader(isr);
 				for (int i = 0 ; i < nbClusters ; i++)
@@ -238,6 +240,7 @@ public class KMeansND extends Configured implements Tool{
 							}
 							sb.append(tokens[c]);
 						}
+						sb.append(","+newCluster);
 						bw.write(sb.toString());
 					}
 					catch (Exception e){
@@ -247,8 +250,8 @@ public class KMeansND extends Configured implements Tool{
 					bw.newLine();
 					line = br.readLine();
 				}
-			}*/
-			InputStreamReader isr = new InputStreamReader(fs.open(new Path(os)));
+			}
+			InputStreamReader isr = new InputStreamReader(fs.open(new Path("tmp_results"+cpt)));
 			
 			br = new BufferedReader(isr);
 			String line = br.readLine();
@@ -303,6 +306,7 @@ public class KMeansND extends Configured implements Tool{
 		    job.getConfiguration().set("path", args[0]);
 		    FileOutputFormat.setOutputPath(job, new Path(args[1]));
 	    	job.getConfiguration().set("nbCluster", args[2]);
+	    	job.addCacheFile(new Path(args[0]).toUri());
 	    	StringBuffer s = new StringBuffer();
 	    	for (int i = 3 ; i < args.length ; i++)
 	    	{
