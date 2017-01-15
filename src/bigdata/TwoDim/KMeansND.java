@@ -10,7 +10,6 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.URI;
 import java.util.Iterator;
-import java.util.List;
 import java.util.stream.Stream;
 
 import org.apache.hadoop.conf.Configuration;
@@ -37,17 +36,17 @@ public class KMeansND extends Configured implements Tool{
 
 	public static class KMeansNDMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 		
-		private double[] totalPosPerCluster = null;
-		private int[] totalElemPerCluster = null;
-		public String[] column = null;
-		private int nbClusters = 0;
-		private double[] keys;
+		private double[] totalPosPerCluster = null; // Array which contains the sum of the positions of each element in one cluster.
+		private int[] totalElemPerCluster = null; // Array which contains the number of elements for each cluster.
+		public String[] column = null; // Array which contains the number of the column which contains coordinates of each point.
+		private int nbClusters = 0; // Number of clusters, specified in args.
+		private double[] keys; // Array which contains the coordinates of each pivot.
 		private BufferedWriter bw = null;
 		private BufferedReader br = null;
-		private File cached_input;
-		private URI[] cached_uris;
+		private File cached_input; // The input in args contained in a cache file.
+		private URI[] cached_uris; // Array which contains the URI of all the cache files.
 		
-		private boolean check()
+		private boolean check() /* Checks if we have to stop the algorithm */
 		{
 			for (int i = 0 ; i < nbClusters ; i++)
 			{
@@ -64,7 +63,7 @@ public class KMeansND extends Configured implements Tool{
 			return true;
 		}
 		
-		private boolean notIn(Double d)
+		private boolean notIn(Double d) /* Check for key duplication */
 		{
 			for (int i = 0 ; i < keys.length ; i++)
 			{
@@ -79,7 +78,7 @@ public class KMeansND extends Configured implements Tool{
 		public void setup (Context context) throws IOException
 		{
 			Configuration conf = context.getConfiguration();
-			try
+			try /* args parsing */
 			{
 				nbClusters = Integer.parseInt(conf.get("nbCluster"));
 				column = conf.get("numColonne").split(",");
@@ -92,7 +91,7 @@ public class KMeansND extends Configured implements Tool{
 			totalPosPerCluster = new double[nbClusters];
 			totalElemPerCluster = new int[nbClusters];
 			keys = new double[nbClusters];
-			for (int i = 0 ; i < nbClusters ; i++)
+			for (int i = 0 ; i < nbClusters ; i++) /* array initialization */
 			{
 				totalPosPerCluster[i] = 0;
 				keys[i] = 0.0;
@@ -101,11 +100,11 @@ public class KMeansND extends Configured implements Tool{
 			FileSystem fs = FileSystem.get(conf);
 			if (context.getCacheFiles() != null && context.getCacheFiles().length > 0)
 				cached_uris = context.getCacheFiles();
-			cached_input = new File("tmp_results");
+			cached_input = new File("tmp_results"); /* get the cache file */
 			if (!(cached_input.exists()))
 				cached_input.createNewFile();
 			OutputStream out = fs.create(new Path(cached_input.getPath()), true);
-			BufferedReader cached_reader = new BufferedReader(
+			BufferedReader cached_reader = new BufferedReader( /*reader of the cache file */
 					new InputStreamReader(fs.open(
 							(new Path((cached_uris[0]).getPath()))
 							)));			
@@ -113,9 +112,9 @@ public class KMeansND extends Configured implements Tool{
 			Stream<String> lines = cached_reader.lines();
 			int nbLignes = 0;
 			Iterator<String> it = lines.iterator();
-			while(it.hasNext() && nbLignes < nbClusters){
+			while(it.hasNext() && nbLignes < nbClusters){ /* Fill up the key array w/o side effects */
 				String tokens[] = it.next().split(",");
-				boolean isValid = true;
+				boolean isValid = true; 
 				for (int l = 0 ; l < tokens.length ; l++)
 				{
 					if (tokens[l].isEmpty())
@@ -124,7 +123,7 @@ public class KMeansND extends Configured implements Tool{
 				Double position = 0.0;
 				Double currentColumn = 0.0;
 				
-					for (int l = 0 ; l < column.length ; l++)
+					for (int l = 0 ; l < column.length ; l++) /* Pythagore's theorem, calculate the distance of each point from the origin */
 					{
 						try {
 						position *= position;
@@ -137,7 +136,8 @@ public class KMeansND extends Configured implements Tool{
 							e.printStackTrace();
 						}
 					}
-				if (isValid && notIn(position))
+				if (isValid && notIn(position)) /* Are all the columns of the line filled up ?
+				 								   Do we have any duplication ? */
 				{			
 					keys[nbLignes] = position;
 					nbLignes++;
@@ -148,7 +148,8 @@ public class KMeansND extends Configured implements Tool{
 		public void map(LongWritable key, Text value, Context context) throws IOException {
 			String tokens[] = value.toString().split(",");
 			Double position = 0.0;
-			try
+			try /* Checks if all columns can be parsed as double. 
+				If it's possible, Pythagore to get the correct position. */
 			{
 				for (int i = 0 ; i < column.length ; i++)
 					position += (Double.parseDouble(tokens[Integer.parseInt(column[i])]) * Double.parseDouble(tokens[Integer.parseInt(column[i])]));
@@ -161,12 +162,11 @@ public class KMeansND extends Configured implements Tool{
 			position = Math.sqrt(Math.abs(position));
 			int newKey = 0;
 			double distance = Math.abs(position - keys[0]);
-			for (int i = 1 ; i < nbClusters ; i++)
+			for (int i = 1 ; i < nbClusters ; i++) /* Decides which point belongs to which cluster */
 			{
 				double currentDistance = Math.abs(position - keys[i]);
 				if (currentDistance < distance)
-				{
-					
+				{			
 					newKey = i;
 					distance = currentDistance;
 				}
@@ -181,7 +181,7 @@ public class KMeansND extends Configured implements Tool{
 		{
 			FileSystem fs = FileSystem.get(context.getConfiguration());
 			int cpt = 0;
-			while(!(check()))
+			while(!(check())) /* While we haven't find a good convergence value */
 			{
 				cpt++;
 				File currentResults = new File("tmp_results"+new IntWritable(cpt).toString());
@@ -190,7 +190,7 @@ public class KMeansND extends Configured implements Tool{
 				OutputStream out = fs.create(new Path(currentResults.getPath()), true);
 				bw = new BufferedWriter(new OutputStreamWriter(out));
 				br = new BufferedReader(new InputStreamReader(fs.open((new Path((cached_uris[0]).getPath())))));;
-				for (int i = 0 ; i < nbClusters ; i++)
+				for (int i = 0 ; i < nbClusters ; i++) /* Calculate the average of keys position */
 				{
 					if (totalElemPerCluster[i] == 0)
 						keys[i] = totalPosPerCluster[i];
@@ -200,7 +200,7 @@ public class KMeansND extends Configured implements Tool{
 					totalElemPerCluster[i] = 0;
 				}
 				String line = br.readLine();
-				while(line != null)
+				while(line != null) /* Recalculate the values with the new clusters for each point. Same way as map does.*/
 				{
 					String[] tokens = line.split(",");
 					try
@@ -218,8 +218,9 @@ public class KMeansND extends Configured implements Tool{
 						}
 						totalElemPerCluster[Integer.parseInt(newCluster)] += 1;
 						totalPosPerCluster[Integer.parseInt(newCluster)] += distance;
-						StringBuffer sb = new StringBuffer("");
-						for (int c = 0 ; c < tokens.length - 1 ; c++)
+						StringBuffer sb = new StringBuffer(""); 
+						for (int c = 0 ; c < tokens.length - 1 ; c++) /* Rewrite the current line in a StringBuffer
+																		 which allow us to recalculate positions if needed */
 						{
 							if (c != 0)
 							{
@@ -227,7 +228,7 @@ public class KMeansND extends Configured implements Tool{
 							}
 							sb.append(tokens[c]);
 						}
-						sb.append(","+newCluster);
+						sb.append(","+newCluster); /* Appends the new cluster where the point belongs */
 						bw.write(sb.toString());
 					}
 					catch (Exception e){
@@ -237,8 +238,8 @@ public class KMeansND extends Configured implements Tool{
 					bw.newLine();
 					line = br.readLine();
 				}
-			}
-			InputStreamReader isr = new InputStreamReader(fs.open(new Path("tmp_results"+cpt)));
+			} /* End of the while, end of the algorithm */
+			InputStreamReader isr = new InputStreamReader(fs.open(new Path("tmp_results"+cpt))); /* Read the last tmp_results file, aka the file with right results */
 			
 			br = new BufferedReader(isr);
 			String line = br.readLine();
@@ -246,7 +247,7 @@ public class KMeansND extends Configured implements Tool{
 			{
 				String[] tokens = line.split(",");
 				StringBuffer value = new StringBuffer("");
-				for (int i = 1 ; i < tokens.length - 2 ; i++)
+				for (int i = 1 ; i < tokens.length - 2 ; i++) /* Allows us to parse the data and writing it in the context */
 				{
 					if (i != 1)
 					{
@@ -264,9 +265,9 @@ public class KMeansND extends Configured implements Tool{
 				}
 				line = br.readLine();
 			}
-			if(cached_input.exists())
+			if(cached_input.exists()) /* Delete the cache version of the input file */
 				fs.delete(new Path(cached_input.getPath()), true);
-			for(;cpt > 0; cpt--){
+			for(;cpt > 0; cpt--){ /* Delete the files used during the cleanup */
 				fs.delete(new Path("tmp_results"+cpt), true);
 			}
 		}
@@ -284,9 +285,7 @@ public class KMeansND extends Configured implements Tool{
 
 		}
 	}
-	
-	public static List<Double> centroids = null;
-	
+
 	public int run(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
 		Configuration conf = new Configuration();
 	    Job job = Job.getInstance(conf, "Projet");
@@ -297,7 +296,7 @@ public class KMeansND extends Configured implements Tool{
 	    	job.getConfiguration().set("nbCluster", args[2]);
 	    	job.addCacheFile(new Path(args[0]).toUri());
 	    	StringBuffer s = new StringBuffer();
-	    	for (int i = 3 ; i < args.length ; i++)
+	    	for (int i = 3 ; i < args.length ; i++) /* Get all the columns given in the command line */
 	    	{
 	    		if (i != 3)
 	    		{
